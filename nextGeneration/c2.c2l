@@ -1,0 +1,172 @@
+
+# User code:
+# =========
+
+# Initialization:
+{@
+	onInputAccepted = func(_ *Symbol) {
+	    WriteParserGoSource()
+	}
+@}
+
+# Regular expressions:
+# ===================
+
+# Tokens:
+codeStart	    "{@"	        : \{@\s*
+codeEnd			"@}"            : \s*@}
+newline			"\n"            : \r?\n
+whitespace		""              : \s+
+string          ""              : ".*?"
+sectionDelim    "@@"            : @@
+equals          "="             : =
+or              "|"             : \|
+regexStart      ": <regex>"     : :\s*
+varName			"variable name" : \w[\w\d]*
+lambda          " "             : ~
+eof             "EOF"           : $
+blockComment	""              : ###(?:\n|.)*?###
+lineComment		""              : #[^\r\n]*
+@@
+
+# Tokens to ignore in rules:
+whitespace
+newline
+blockComment
+lineComment
+@@
+
+# Token actions:
+codeStart			{@ s.data = takeUntil($codeEnd$) @}
+regexStart          {@ s.data = takeUntil($newline$) @}
+@@
+
+# Rule definitions:
+# ================
+
+START =
+	USER_CODE REGEX RULES {@ @}
+@@
+
+USER_CODE =
+    CODE_BLOCK {@
+        userInit = s.sub[0].data.(string)
+    @}
+@@
+
+CODE_BLOCK =
+    codeStart codeEnd {@ s.data = s.sub[0].data @}
+@@
+
+REGEX =
+    REGEX_LIST VAR_LIST REGEX_ACTIONS {@
+        var varnames = s.sub[1].data.([]*Token)
+        for i := len(varnames) - 1; i >= 0; i-- {
+            t := varnames[i]
+            sym := readSymbolsMap[t.lexeme]
+            if sym != nil {
+                terminals[sym.id].ignore = true
+            } else {
+                errorAt(t.row, t.column, fmt.Sprintf("Symbol '%v' is not defined.", t.lexeme))
+            }
+        }
+    @}
+@@
+
+REGEX_LIST =
+    REGEX_DEF REGEX_LIST {@ @}
+    | sectionDelim {@ @}
+@@
+
+REGEX_DEF =
+    varName string regexStart {@
+        name := s.sub[0].token.lexeme
+        dispName := s.sub[1].token.lexeme
+        if len(dispName) == 2 {
+            dispName = name
+        } else {
+            dispName = dispName[1:len(dispName)-1]
+        }
+        sym := &Sym{id: len(readSymbols), name: name, dispName: dispName}
+        readSymbols = append(readSymbols, sym)
+        readSymbolsMap[sym.name] = sym
+        terminals = append(terminals, Terminal{name: sym.name, expr: s.sub[2].data.(string)})
+    @}
+@@
+
+VAR_LIST =
+    varName VAR_LIST {@ s.data = append(s.sub[1].data.([]*Token), s.sub[0].token) @}
+    | sectionDelim {@ s.data = make([]*Token, 0, 5) @}
+@@
+
+REGEX_ACTIONS =
+    varName CODE_BLOCK REGEX_ACTIONS {@
+        sym := readSymbolsMap[s.sub[0].token.lexeme]
+        if sym != nil {
+            terminals[sym.id].action = s.sub[1].data.(string)
+        } else {
+            t := s.sub[0].token
+            errorAt(t.row, t.column, fmt.Sprintf("Symbol '%v' is not defined.", t.lexeme))
+        }
+    @}
+    | sectionDelim {@ @}
+@@
+
+RULES =
+    RULE_DEF RULE_LIST {@
+        for _, n := range nonterminals {
+            for p := len(n.productions) - 1; p >= 0; p-- {
+                for i := len(n.productions[p].vars) - 1; i >= 0; i-- {
+                    var v = n.productions[p].vars[i]
+                    if readSymbolsMap[v.lexeme] == nil {
+                        errorAt(v.row, v.column,
+                            fmt.Sprintf("Symbol '%v' in rule '%v' has not been defined.", v.lexeme, n.name))
+                    }
+                }
+            }
+        }
+    @}
+@@
+
+RULE_DEF =
+    varName equals RHS_AND_ACTION RHS_LIST {@
+        sym := &Sym{id: len(readSymbols), name: s.sub[0].token.lexeme}
+        readSymbols = append(readSymbols, sym)
+        readSymbolsMap[sym.name] = sym
+
+        // Create the nonterminal
+        nonterm := Nonterminal{name: sym.name, productions: s.sub[3].data.([]Production)}
+
+        // Append the first production.
+        p := s.sub[2].data.(Production)
+        nonterm.productions = append(nonterm.productions, p)
+
+        nonterminals = append(nonterminals, nonterm)
+    @}
+@@
+
+RHS_AND_ACTION =
+    varName RHS_AND_ACTION {@
+        p := s.sub[1].data.(Production)
+        p.vars = append(p.vars, s.sub[0].token)
+        s.data = p
+    @}
+    | CODE_BLOCK {@
+		s.data = Production{action: s.sub[0].data.(string), vars: make([]*Token, 0, 4)}
+    @}
+@@
+
+RHS_LIST =
+    or RHS_AND_ACTION RHS_LIST {@
+        p := s.sub[1].data.(Production)
+        s.data = append(s.sub[2].data.([]Production), p)
+    @}
+    | sectionDelim {@ s.data = make([]Production, 0, 2) @}
+@@
+
+RULE_LIST =
+    RULE_DEF RULE_LIST {@ @}
+    | sectionDelim {@ @}
+@@
+
+@@
