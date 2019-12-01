@@ -1,314 +1,266 @@
 package c2
 
 import (
-	"io/ioutil"
-	"strings"
-	"regexp"
 	"fmt"
-	"c2/lr0"
-	"bytes"
+	"github.com/pkg/errors"
+	"io/ioutil"
+	"regexp"
+	"strings"
 )
 
-/*
- * Exported structs/functions
- */
+const (
+	OpErr = iota
+	OpShift
+	OpReduce
+	OpGoto
+	OpAccept
+)
+
+var opNames = map[byte]string{
+	OpErr:    "err",
+	OpShift:  "sft",
+	OpReduce: "rdc",
+	OpGoto:   "gto",
+	OpAccept: "acc",
+}
+
+var newlineRegex = regexp.MustCompile(`\r?\n`)
+
+type Parser struct {
+	OnNextToken func(t *Token)
+	OnNextParse func(n *ASTNode, nextAction byte)
+	grammar     CondensedGrammar
+	file        *File
+	token       *Token
+	parseTable  ParseTable
+}
+
+func NewParser(g CondensedGrammar, t ParseTable) *Parser {
+	return &Parser{
+		grammar:    g,
+		parseTable: t,
+	}
+}
 
 // Parses a file according to symbols.
-func ParseFile(filepath string) error {
-	var err error
-	pContent, err = ioutil.ReadFile(filepath)
+func (p *Parser) ReadFile(filepath string) error {
+	content, err := ioutil.ReadFile(filepath)
 	if err != nil {
 		return err
 	}
-	pInputFile = filepath
-	return pParse()
+	p.file = &File{
+		name:    filepath,
+		content: content,
+		size:    len(content),
+	}
+	return p.parse()
 }
 
 // Parses a string according to symbols.
-func ParseString(text string) error {
+func (p *Parser) ReadString(text string) error {
 	r := strings.NewReader(text)
-	var err error
-	pContent, err = ioutil.ReadAll(r)
+	content, err := ioutil.ReadAll(r)
 	if err != nil {
 		return err
 	}
-	pInputFile = "text.c2l"
-	return pParse()
-}
-
-type Token struct {
-	id          int
-	lexeme      string
-	bytes       []byte
-	row, column int
-}
-
-type Symbol struct {
-	id    int
-	token *Token
-	data  interface{}
-	sub   []*Symbol
-}
-
-func (s Symbol) Name() string {
-	return pSymbolName(s.id)
-}
-
-/*
- * Vars for use by production actions.
- */
-
-var onNextToken func(t *Token)
-var onNextParse func(sym *Symbol, nextAction int)
-var onInputAccepted func(s *Symbol)
-// var onError func(e *error)
-
-/*
- * "private" vars and funcs.
- */
-
-var pInputFile string
-var pInitialized bool
-var pNewline= regexp.MustCompile("\\r?\\n")
-var pContent []byte
-var pIndex int
-var pSize int
-var pRow, pColumn= 1, 1
-var pCurrentToken *Token
-
-/*
- * Functions for use by production actions.
- */
-
-func errorAt(r, c int, reason string) {
-	errorOut(fmt.Sprintf("%v:%v | %v", r, c, reason))
-}
-
-func errorOut(reason string) {
-	panic(fmt.Errorf("[Error] %v", reason))
-}
-
-// Prints out the current token to standard out.
-func printCurrentToken() {
-	fmt.Printf("TOKEN: %s\tVALUE: %s\n", pSymbolName(pCurrentToken.id), pCurrentToken.lexeme)
-}
-
-// Saves all tokens found into 'takenText[saveAsID]' until a token of 'untilID' is found.
-func takeUntil(untilID int) string {
-	revertToken := pCurrentToken
-	var buffer bytes.Buffer
-	nextToken := pPeekNext()
-	for nextToken.id != untilID && nextToken.id != pEOF {
-		pNext()
-		buffer.WriteString(pCurrentToken.lexeme)
-		nextToken = pPeekNext()
+	p.file = &File{
+		name:    "<string>",
+		content: content,
+		size:    len(content),
 	}
-	r, c := pRow, pColumn
-	pNext()
-	pCurrentToken = revertToken
-	pRow, pColumn = r, c
-	pIndex -= len(pCurrentToken.bytes)
-	return buffer.String()
+	return p.parse()
 }
 
-/*
- * "Private" parser functionality.
- */
-
-func pProductionLength(symId, prodId int) int {
-	return pRuleLengths[symId-pAugStart][prodId]
-}
-
-func pRunProductionAction(symId, prodId int, s *Symbol) {
-	pRuleActions[symId-pAugStart][prodId](s)
-}
-
-func pSymbolName(sym int) string {
-	return pSymToString[sym]
-}
-
-func pNext() {
+// Move to the next token in the input.
+func (p *Parser) Next() {
+	t := p.PeekNext()
 	// Adjust the current pRow and pColumn.
-	if pCurrentToken != nil {
+	if p.token != nil {
+		file := p.file
 		var i int
-		match := pNewline.FindAllIndex(pCurrentToken.bytes, -1)
+		match := newlineRegex.FindAllIndex(p.token.bytes, -1)
 		if match != nil {
-			pRow += len(match)
+			file.row += len(match)
 			i = match[len(match)-1][1]
-			pColumn = 1
+			file.column = 1
 		}
-		for _, char := range pCurrentToken.lexeme[i:] {
+		for _, char := range p.token.lexeme[i:] {
 			if char == '\t' {
-				pColumn += 4 - (pColumn-1)%4
+				file.column += 4 - (file.column-1)%4
 			} else {
-				pColumn++
+				file.column++
 			}
 		}
-		pIndex += len(pCurrentToken.bytes)
+		file.index += len(p.token.bytes)
 	}
-
-	// Check for end of input.
-	if pIndex >= pSize {
-		pCurrentToken = &Token{
-			id:     pEOF,
-			bytes:  nil,
-			lexeme: "",
-			row:    pRow,
-			column: pColumn,
-		}
-		return
-	}
-
-	// Try all pTerminals to find the correct token.
-	for i := range pTerminals {
-		match := pTerminals[i].Find(pContent[pIndex:])
-		if len(match) == 0 {
-			continue
-		}
-
-		pCurrentToken = &Token{
-			id:     i,
-			bytes:  match,
-			lexeme: string(match[:]),
-			row:    pRow,
-			column: pColumn,
-		}
-		break // Final expr is 'undefined' - a match-all, so we're guaranteed to find a token.
-	}
+	p.token = t
 }
 
-func pPeekNext() *Token {
-	peekIndex := pIndex + len(pCurrentToken.bytes)
-	if peekIndex >= pSize {
+func (p *Parser) PeekNext() *Token {
+	file := p.file
+	var skipLen int
+	if p.token != nil {
+		skipLen = len(p.token.bytes)
+	}
+	peekIndex := file.index + skipLen
+	if peekIndex >= file.size {
 		return &Token{
-			id:     pEOF,
+			symbol: p.grammar.Symbols[p.grammar.EndOfFile].(Terminal),
 			bytes:  nil,
 			lexeme: "",
-			row:    pRow,
-			column: pColumn,
+			row:    file.row,
+			column: file.column,
 		}
 	}
 
-	for i := range pTerminals {
-		match := pTerminals[i].Find(pContent[peekIndex:])
+	for tId := 0; tId < p.grammar.AugmentedStart; tId++ {
+		t := p.grammar.Symbols[tId].(Terminal)
+		match := t.Find(file.content[peekIndex:])
 		if len(match) == 0 {
 			continue
 		}
 
 		return &Token{
-			id:     i,
+			symbol: p.grammar.Symbols[tId].(Terminal),
 			bytes:  match,
 			lexeme: string(match[:]),
-			row:    pRow,
-			column: pColumn,
+			file:   file.name,
+			row:    file.row,
+			column: file.column,
 		}
 	}
-
 	return nil
 }
 
-func pParse() error {
-	if !pInitialized {
-		pUserInitialization()
-		pInitialized = true
+func (p *Parser) parse() error {
+	ast, err := p.buildAST()
+	if err != nil {
+		return errors.WithMessage(err, "error while parsing files and building AST")
 	}
+	if err = ast.Traverse(); err != nil {
+		return errors.WithMessage(err, "error while traversing AST")
+	}
+	return err
+}
 
+func (p *Parser) buildAST() (*ASTNode, error) {
 	// Stack initialized with State = 0
 	var stateStack = make([]int, 1, 10)
-	var symbolStack = make([]*Symbol, 0, 10)
+	var symbolStack = make([]*ASTNode, 0, 10)
 	var state int
-	var symbol, onHoldSymbol *Symbol
+	var node, onHoldNode *ASTNode
 
-	pSize = len(pContent)
 	for {
-		pNext()
-		if onNextToken != nil {
-			onNextToken(pCurrentToken)
+		p.Next()
+		if p.OnNextToken != nil {
+			p.OnNextToken(p.token)
 		}
-		if pIgnoreTerminals[pCurrentToken.id] {
+		symbol := p.token.symbol
+		if symbol.IsIgnored() {
 			continue
 		}
-		symbol = &Symbol{id: pCurrentToken.id, token: pCurrentToken}
-		if symbol.id == pUndefined {
-			t := symbol.token
-			errorAt(t.row, t.column, fmt.Sprintf("Unrecognized symbol: %v", t.lexeme))
+		node = &ASTNode{
+			symbol: symbol,
+			token:  p.token,
+			file:   p.token.file,
+			row:    p.token.row,
+			column: p.token.column,
+		}
+		if symbol.ID() == p.grammar.Undefined {
+			return nil, node.NewError(fmt.Sprintf("unrecognized symbol: '%v'", p.token.lexeme))
 		}
 
-		action := pTerminalActions[pCurrentToken.id]
-		if action != nil {
-			action(symbol)
+		if output, err := symbol.RunAction(p.token); err != nil {
+			return nil, errors.WithMessage(err, "error running terminal action")
+		} else {
+			node.Data = output
 		}
 
 		// Parse token with respect to pRuleLengths.
-		ParseToken:
-		e := pParseTable[state][symbol.id]
+	ParseToken:
+		e := p.parseTable[state][node.symbol.ID()]
 
-		if onNextParse != nil {
-			onNextParse(symbol, e.Op)
+		if p.OnNextParse != nil {
+			p.OnNextParse(node, e.Op)
 		}
 
 		switch e.Op {
 
-		case lr0.OpAccept:
+		case OpAccept:
 			fmt.Println("Input has been accepted.")
-			if onInputAccepted != nil {
-				onInputAccepted(symbolStack[0])
-			}
-			return nil
+			return symbolStack[0], nil
 
-		case lr0.OpShift:
+		case OpShift:
 			state = e.Data
-			symbolStack = append(symbolStack, symbol)
+			symbolStack = append(symbolStack, node)
 			stateStack = append(stateStack, state)
 			break
 
-		case lr0.OpReduce:
+		case OpReduce:
 			// Remove the current state and the last input from the stack.
-			rhsCount := pProductionLength(e.Data, e.ReduceRHS)
-			reducedSymbols := make([]*Symbol, 0, 4)
+			production := p.grammar.Productions[e.Data]
+			rhsCount := len(production.RHS)
+			reducedNodes := make([]*ASTNode, 0, 4)
 			for _, s := range symbolStack[len(symbolStack)-rhsCount:] {
-				reducedSymbols = append(reducedSymbols, s)
+				reducedNodes = append(reducedNodes, s)
 			}
 
 			symbolStack = symbolStack[:len(symbolStack)-rhsCount]
 			stateStack = stateStack[:len(stateStack)-rhsCount]
 
-			state = stateStack[len(stateStack) - 1]
-			onHoldSymbol = symbol
-			symbol = &Symbol{id: e.Data, sub: reducedSymbols} // 'symbol' is now a non-terminal.
-
-			pRunProductionAction(e.Data, e.ReduceRHS, symbol)
+			state = stateStack[len(stateStack)-1]
+			onHoldNode = node
+			node = &ASTNode{
+				symbol:     p.grammar.Symbols[production.LHS],
+				down:       reducedNodes,
+				production: production,
+				file:       reducedNodes[0].file,
+				row:        reducedNodes[0].row,
+				column:     reducedNodes[0].column,
+			}
+			for _, n := range node.down {
+				n.up = node
+			}
+			// if f := production.Actions[len(production.RHS)]; f != nil {
+			// 	if err := f(node); err != nil {
+			// 		return nil, err
+			// 	}
+			// }
 			goto ParseToken
 
-		case lr0.OpGoto:
+		case OpGoto:
 			state = e.Data
-			symbolStack = append(symbolStack, symbol)
-			symbol = onHoldSymbol
+			symbolStack = append(symbolStack, node)
+			node = onHoldNode
 			stateStack = append(stateStack, state)
 			goto ParseToken
 
-		case lr0.OpErr:
+		case OpErr:
 			var s string
-			if pCurrentToken.id == pEOF {
-				s = "Reached EOF prematurely."
+			if symbol.ID() == p.grammar.EndOfFile {
+				s += "Reached EOF prematurely."
 			} else {
-				if symbol.token != nil {
-					s += fmt.Sprintf("Found %v --> %v,", symbol.Name(), symbol.token.lexeme)
+				if node.symbol.ID() < p.grammar.AugmentedStart {
+					s += fmt.Sprintf("Found %v --> %v,", node.symbol.Name(), p.token.lexeme)
 				} else {
-					s += fmt.Sprintf("Found %v,", symbol.Name())
+					s += fmt.Sprintf("Found %v,", node.symbol.Name())
 				}
 			}
-			s += fmt.Sprintf(" Expected one of: ")
-			for sym, entry := range pParseTable[state] {
-				if sym >= pTerminalCount {
+			expectedSymbols := make([]string, 0, 8)
+			for sym, entry := range p.parseTable[state] {
+				if sym >= p.grammar.AugmentedStart {
 					break
 				}
-				if entry.Op != lr0.OpErr {
-					s += fmt.Sprintf("%v, ", pSymbolName(sym))
+				if entry.Op != OpErr {
+					expectedSymbols = append(expectedSymbols, p.grammar.Symbols[sym].Name())
 				}
 			}
-			errorAt(pRow, pColumn, s[:len(s) - 2])
+			if len(expectedSymbols) > 0 {
+				s += fmt.Sprint("expected one of: ", strings.Join(expectedSymbols, ", "))
+			} else {
+				s += "but there are no symbols expected to be found (check the grammar for errors)"
+			}
+			return nil, node.NewError(s)
 		}
 	}
-	return nil
 }
