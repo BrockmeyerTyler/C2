@@ -3,6 +3,7 @@ package c2
 import (
 	"fmt"
 	"github.com/pkg/errors"
+	"github.com/tjbrockmeyer/c2/c2gram"
 	"io/ioutil"
 	"regexp"
 	"strings"
@@ -29,13 +30,13 @@ var newlineRegex = regexp.MustCompile(`\r?\n`)
 type Parser struct {
 	OnNextToken func(t *Token)
 	OnNextParse func(n *ASTNode, nextAction byte)
-	grammar     CondensedGrammar
+	grammar     c2gram.Assembled
 	file        *File
 	token       *Token
 	parseTable  ParseTable
 }
 
-func NewParser(g CondensedGrammar, t ParseTable) *Parser {
+func NewParser(g c2gram.Assembled, t ParseTable) *Parser {
 	return &Parser{
 		grammar:    g,
 		parseTable: t,
@@ -105,7 +106,7 @@ func (p *Parser) PeekNext() *Token {
 	peekIndex := file.index + skipLen
 	if peekIndex >= file.size {
 		return &Token{
-			symbol: p.grammar.Symbols[p.grammar.EndOfFile].(Terminal),
+			symbol: p.grammar.Symbols[p.grammar.EndOfFile].(c2gram.Terminal),
 			bytes:  nil,
 			lexeme: "",
 			row:    file.row,
@@ -114,14 +115,14 @@ func (p *Parser) PeekNext() *Token {
 	}
 
 	for tId := 0; tId < p.grammar.AugmentedStart; tId++ {
-		t := p.grammar.Symbols[tId].(Terminal)
+		t := p.grammar.Symbols[tId].(c2gram.Terminal)
 		match := t.Find(file.content[peekIndex:])
 		if len(match) == 0 {
 			continue
 		}
 
 		return &Token{
-			symbol: p.grammar.Symbols[tId].(Terminal),
+			symbol: p.grammar.Symbols[tId].(c2gram.Terminal),
 			bytes:  match,
 			lexeme: string(match[:]),
 			file:   file.name,

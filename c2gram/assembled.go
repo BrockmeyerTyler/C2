@@ -1,7 +1,8 @@
-package c2
+package c2gram
 
 import (
 	"github.com/pkg/errors"
+	"github.com/tjbrockmeyer/c2"
 	"regexp"
 	"strings"
 )
@@ -16,7 +17,7 @@ type Terminal interface {
 	Symbol
 	Find([]byte) []byte
 	IsIgnored() bool
-	RunAction(*Token) (interface{}, error)
+	RunAction(*c2.Token) (interface{}, error)
 }
 
 type NonTerminal interface {
@@ -30,7 +31,7 @@ type Production struct {
 	Actions map[int]ProductionAction
 }
 
-type CondensedGrammar struct {
+type Assembled struct {
 	Undefined        int
 	EndOfFile        int
 	AugmentedStart   int
@@ -39,7 +40,7 @@ type CondensedGrammar struct {
 	ProductionsByLHS map[int][]*Production
 }
 
-func (g Grammar) Build() (CondensedGrammar, error) {
+func (g Grammar) Assemble() (Assembled, error) {
 	symbols := make([]Symbol, 0, 40)
 	productions := make([]*Production, 40)
 	productionsByLHS := make(map[int][]*Production, 20)
@@ -106,10 +107,10 @@ func (g Grammar) Build() (CondensedGrammar, error) {
 	}
 
 	if len(undefinedSymbols) > 0 {
-		return CondensedGrammar{}, errors.Errorf(
+		return Assembled{}, errors.Errorf(
 			"the following symbols are undefined in the grammar: %s", strings.Join(undefinedSymbols, ", "))
 	}
-	return CondensedGrammar{
+	return Assembled{
 		Undefined:        len(terminals) - 2,
 		EndOfFile:        len(terminals) - 1,
 		AugmentedStart:   len(terminals),

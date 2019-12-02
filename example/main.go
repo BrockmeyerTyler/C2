@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	c2 "github.com/tjbrockmeyer/C2"
-	"github.com/tjbrockmeyer/C2/example/lang"
-	"github.com/tjbrockmeyer/C2/lr0"
+	c2 "github.com/tjbrockmeyer/c2"
+	"github.com/tjbrockmeyer/c2/c2lr0"
+	"github.com/tjbrockmeyer/c2/example/lang"
 )
 
 func main() {
@@ -12,7 +12,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	pt, err := lr0.GenerateParseTable(g, true)
+	pt, err := c2lr0.NewParseTable(g, true)
 	if err != nil {
 		panic(err)
 	}

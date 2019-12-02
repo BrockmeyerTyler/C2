@@ -1,11 +1,12 @@
-package c2
+package c2gram
 
 import (
 	"fmt"
+	"github.com/tjbrockmeyer/c2"
 	"regexp"
 )
 
-type TokenAction func(t *Token) (interface{}, error)
+type TokenAction func(t *c2.Token) (interface{}, error)
 
 type TerminalDefinition interface {
 	Ignore() TerminalDefinition
@@ -47,7 +48,7 @@ func (t terminal) IsIgnored() bool {
 	return t.ignore
 }
 
-func (t terminal) RunAction(token *Token) (interface{}, error) {
+func (t terminal) RunAction(token *c2.Token) (interface{}, error) {
 	if t.action == nil {
 		return nil, nil
 	}

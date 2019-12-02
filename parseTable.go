@@ -2,6 +2,7 @@ package c2
 
 import (
 	"fmt"
+	"github.com/tjbrockmeyer/c2/c2gram"
 	"strings"
 )
 
@@ -12,7 +13,7 @@ type ParseTableEntry struct {
 
 type ParseTable [][]ParseTableEntry
 
-func (p ParseTable) ToString(symbols []Symbol) string {
+func (p ParseTable) ToString(symbols []c2gram.Symbol) string {
 	stateSpacing := 1
 	k := len(p)
 	for k > 10 {

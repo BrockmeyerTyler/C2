@@ -3,14 +3,15 @@ package c2
 import (
 	"fmt"
 	"github.com/pkg/errors"
+	"github.com/tjbrockmeyer/c2/c2gram"
 	"strings"
 )
 
 type ASTNode struct {
-	symbol     Symbol
+	symbol     c2gram.Symbol
 	up         *ASTNode
 	down       []*ASTNode
-	production *Production
+	production *c2gram.Production
 	token      *Token
 	file       string
 	row        int
@@ -45,7 +46,7 @@ func (n *ASTNode) Traverse() error {
 	return nil
 }
 
-func (n ASTNode) Symbol() Symbol {
+func (n ASTNode) Symbol() c2gram.Symbol {
 	return n.symbol
 }
 
@@ -69,7 +70,7 @@ func (n ASTNode) NewError(reason string) error {
 	return errors.Errorf("[Error] In %v: At %v:%v | %v", n.file, n.row, n.column, reason)
 }
 
-func (n ASTNode) ToString(symbols []Symbol) string {
+func (n ASTNode) ToString(symbols []c2gram.Symbol) string {
 	if n.token != nil {
 		return fmt.Sprint("TOKEN: ", n.symbol.Name(), "\tLEXEME: ", n.token.lexeme)
 	}

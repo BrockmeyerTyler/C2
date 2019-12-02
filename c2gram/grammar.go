@@ -1,4 +1,4 @@
-package c2
+package c2gram
 
 type Grammar struct {
 	terminals          []*terminal
@@ -7,7 +7,7 @@ type Grammar struct {
 	nonTerminalsByName map[string]*nonTerminal
 }
 
-func NewGrammar() *Grammar {
+func New() *Grammar {
 	return &Grammar{
 		terminals:          make([]*terminal, 0, 20),
 		nonTerminals:       make([]*nonTerminal, 0, 20),

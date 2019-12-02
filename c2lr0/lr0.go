@@ -1,9 +1,11 @@
-package lr0
+// Package lr0 implements an LR(0) table constructor.
+package c2lr0
 
 import (
 	"errors"
 	"fmt"
-	c2 "github.com/tjbrockmeyer/C2"
+	"github.com/tjbrockmeyer/c2"
+	"github.com/tjbrockmeyer/c2/c2gram"
 	"strings"
 )
 
@@ -43,7 +45,7 @@ func (c *_Closure) tryAddUniqueItem(i _ClosureItem) bool {
 }
 
 type _ClosureItem struct {
-	production *c2.Production
+	production *c2gram.Production
 	index      int
 }
 
@@ -56,11 +58,11 @@ func (c _ClosureItem) asKey() string {
 	return fmt.Sprint(c.production.ID, "|", c.index)
 }
 
-func itemIsAccepter(c _ClosureItem, startSymbolProduction *c2.Production) bool {
+func itemIsAccepter(c _ClosureItem, startSymbolProduction *c2gram.Production) bool {
 	return c.production.ID == startSymbolProduction.ID && c.index == len(startSymbolProduction.RHS)-1
 }
 
-func closureToString(c *_Closure, syms []c2.Symbol) string {
+func closureToString(c *_Closure, syms []c2gram.Symbol) string {
 	b := strings.Builder{}
 	b.WriteString(fmt.Sprint("(", c.id, ")"))
 	for _, item := range c.items {
@@ -82,7 +84,10 @@ func closureToString(c *_Closure, syms []c2.Symbol) string {
 	return b.String()
 }
 
-func GenerateParseTable(g c2.CondensedGrammar, ignoreShiftReduce bool) (c2.ParseTable, error) {
+// Construct a parse table from a given grammar.
+// Returns errors when there are shift-reduce or reduce-reduce conflicts.
+// shift-reduce errors may be ignored by specifying the boolean flag.
+func NewParseTable(g c2gram.Assembled, ignoreShiftReduce bool) (c2.ParseTable, error) {
 	startProduction := g.ProductionsByLHS[g.AugmentedStart][0]
 	// Create original closure.
 	c := newClosure(_ClosureItem{production: startProduction})

@@ -2,7 +2,8 @@ package lang
 
 import (
 	"fmt"
-	c2 "github.com/tjbrockmeyer/C2"
+	"github.com/tjbrockmeyer/c2"
+	"github.com/tjbrockmeyer/c2/c2gram"
 	"strconv"
 )
 
@@ -105,10 +106,10 @@ var opHandlers = map[opHandlerRef]func(s *c2.ASTNode, lhs, rhs interface{}){
 	},
 }
 
-func Build() (c2.CondensedGrammar, error) {
+func Build() (c2gram.Assembled, error) {
 	variables := make(map[string]*Value)
 
-	g := c2.NewGrammar()
+	g := c2gram.New()
 	g.NewTerminal("ws", `\s+`).Ignore()
 	g.NewTerminal("nl", `\r?\n`).Ignore()
 	g.NewTerminal(";", ";")
@@ -151,12 +152,12 @@ func Build() (c2.CondensedGrammar, error) {
 	g.NewTerminal("lineComment", `//.*`).Ignore()
 	g.NewTerminal("blockComment", `/\*(.|\n)*?\*/`).Ignore()
 
-	g.NewNonterminal("START").
+	g.NewNonTerminal("START").
 		RHS("STATEMENTS")
-	g.NewNonterminal("STATEMENTS").
+	g.NewNonTerminal("STATEMENTS").
 		RHS("STATEMENTS STATEMENT").
 		RHS("STATEMENT")
-	g.NewNonterminal("STATEMENT").
+	g.NewNonTerminal("STATEMENT").
 		RHS("ASSIGN").
 		RHS("print EXPR", func(s *c2.ASTNode) error {
 			fmt.Println(s.Down(1).Data.(Value).value)
@@ -169,13 +170,13 @@ func Build() (c2.CondensedGrammar, error) {
 			fmt.Println("this runs second")
 			return nil
 		})
-	g.NewNonterminal("ASSIGN").
+	g.NewNonTerminal("ASSIGN").
 		RHS("STORAGE = EXPR", func(s *c2.ASTNode) error {
 			storage := s.Down(0).Data.(*Value)
 			*storage = s.Down(2).Data.(Value)
 			return nil
 		})
-	g.NewNonterminal("STORAGE").
+	g.NewNonTerminal("STORAGE").
 		RHS("varName", func(s *c2.ASTNode) error {
 			lexeme := s.Down(0).Data.(string)
 			if _, ok := variables[lexeme]; !ok {
@@ -184,7 +185,7 @@ func Build() (c2.CondensedGrammar, error) {
 			s.Data = variables[lexeme]
 			return nil
 		})
-	g.NewNonterminal("EXPR").
+	g.NewNonTerminal("EXPR").
 		RHS("TERM", func(s *c2.ASTNode) error {
 			s.Data = s.Down(0).Data
 			return nil
@@ -201,7 +202,7 @@ func Build() (c2.CondensedGrammar, error) {
 			f(s, lhs.value, rhs.value)
 			return nil
 		})
-	g.NewNonterminal("TERM").
+	g.NewNonTerminal("TERM").
 		RHS("FACTOR", func(s *c2.ASTNode) error {
 			s.Data = s.Down(0).Data
 			return nil
@@ -218,7 +219,7 @@ func Build() (c2.CondensedGrammar, error) {
 			f(s, lhs.value, rhs.value)
 			return nil
 		})
-	g.NewNonterminal("FACTOR").
+	g.NewNonTerminal("FACTOR").
 		RHS("VALUE", func(s *c2.ASTNode) error {
 			s.Data = s.Down(0).Data
 			return nil
@@ -230,7 +231,7 @@ func Build() (c2.CondensedGrammar, error) {
 		RHS("UNARY_OP FACTOR", func(s *c2.ASTNode) error {
 			return s.NewError("unary ops not implemented")
 		})
-	g.NewNonterminal("VALUE").
+	g.NewNonTerminal("VALUE").
 		RHS("varName", func(s *c2.ASTNode) error {
 			lexeme := s.Down(0).Data.(string)
 			v, ok := variables[lexeme]
@@ -268,14 +269,14 @@ func Build() (c2.CondensedGrammar, error) {
 			}
 			return nil
 		})
-	g.NewNonterminal("UNARY_OP").
+	g.NewNonTerminal("UNARY_OP").
 		RHS("!", func(s *c2.ASTNode) error {
 			return nil
 		}).
 		RHS("-", func(s *c2.ASTNode) error {
 			return nil
 		})
-	g.NewNonterminal("ADD/SUB").
+	g.NewNonTerminal("ADD/SUB").
 		RHS("+", func(s *c2.ASTNode) error {
 			s.Data = opAdd
 			return nil
@@ -284,7 +285,7 @@ func Build() (c2.CondensedGrammar, error) {
 			s.Data = opSub
 			return nil
 		})
-	g.NewNonterminal("MUL/DIV").
+	g.NewNonTerminal("MUL/DIV").
 		RHS("*", func(s *c2.ASTNode) error {
 			s.Data = opMul
 			return nil
@@ -293,5 +294,5 @@ func Build() (c2.CondensedGrammar, error) {
 			s.Data = opDiv
 			return nil
 		})
-	return g.Build()
+	return g.Assemble()
 }

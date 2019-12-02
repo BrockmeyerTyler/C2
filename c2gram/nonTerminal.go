@@ -1,11 +1,12 @@
-package c2
+package c2gram
 
 import (
+	"github.com/tjbrockmeyer/c2"
 	"log"
 	"strings"
 )
 
-type ProductionAction func(s *ASTNode) error
+type ProductionAction func(s *c2.ASTNode) error
 
 type NonTerminalDefinition interface {
 	RHS(symbolsAndActions ...interface{}) NonTerminalDefinition
@@ -22,7 +23,7 @@ type nonTerminalRHS struct {
 }
 
 // Create a new non-terminal for this grammar.
-func (g *Grammar) NewNonterminal(name string) NonTerminalDefinition {
+func (g *Grammar) NewNonTerminal(name string) NonTerminalDefinition {
 	n := &nonTerminal{
 		name:        name,
 		productions: make([]nonTerminalRHS, 0, 2),
@@ -43,7 +44,7 @@ func (n *nonTerminal) RHS(symbolsAndActions ...interface{}) NonTerminalDefinitio
 			symbols = append(symbols, strings.Split(t, " ")...)
 		case ProductionAction:
 			actions[len(symbols)] = t
-		case func(*ASTNode) error:
+		case func(*c2.ASTNode) error:
 			actions[len(symbols)] = t
 		default:
 			log.Println(`ignoring bad 'Symbol' or 'Action' found while defining right hand side for`, n.name, `:`, t)

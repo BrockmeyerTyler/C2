@@ -1,8 +1,10 @@
 package c2
 
+import "github.com/tjbrockmeyer/c2/c2gram"
+
 // A parsed token of input
 type Token struct {
-	symbol Terminal
+	symbol c2gram.Terminal
 	lexeme string
 	bytes  []byte
 	file   string
